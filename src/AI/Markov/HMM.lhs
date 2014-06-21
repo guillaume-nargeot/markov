@@ -12,13 +12,13 @@
 > ) where
 >
 > import Control.Applicative ((<$>), pure)
-> import Control.Monad (forM, ap)
-> import Data.Bifunctor (Bifunctor(first))
+> import Control.Monad (forM, ap, liftM2)
+> import Data.Bifunctor (Bifunctor(first, bimap))
 > import Data.Distribution (Distribution(..), Probability, (<?), (?>), (<~~), uniform)
 > import Data.Function (on)
 > import Data.Function.Extras (fixed)
 > import Data.Function.Memoize (Memoizable(..), deriveMemoize, deriveMemoizable, memoize4)
-> import Data.Functor.Extras (for)
+> import Data.Functor.Extras (for, (<$$>))
 > import Data.Maybe (fromJust)
 > import Data.List.Extras (pairs, argmax, argsum)
 > import Data.Ratio (Ratio)
@@ -398,6 +398,39 @@ sensible option is to set the parameters to be uniform, that is:
 >   , transition = const $ uniform states
 >   , emission   = const $ uniform symbols
 >   } 
+
+A higher-order Hidden Markov Model is one in which we relax the Markov
+assumption - in the hidden layer, the probability of next transitioning to any
+state is dependent on the previous m states, where m is the order of the model.
+The start distribution in this variant models the likelihood of each m-length
+sequence. We represent a second-order HMM:
+
+> data HMM2 state symbol = HMM2
+>   { states'     :: [state]
+>   , symbols'    :: [symbol]
+>   , start'      :: state -> Distribution state
+>   , transition' :: state -> state -> Distribution state
+>   , emission'   :: state -> state -> Distribution symbol 
+>   }
+
+Pleasantly, first-order HMMs are flexible enough to represent higher-order
+HMMs! This can be achieved (admitting some complications) by mapping the
+alphabet from individual state values to to m-tuples of those values, where
+each tuple represents a sequence of states. To extend our example:
+
+> morphism :: Eq state => HMM2 state symbol -> HMM (state, state) symbol
+> morphism HMM2{..} = let tuple = liftM2 (,) states' states' in HMM
+>   { states      = tuple
+>   , symbols     = symbols'
+>   , start       = ap (,) (uncurry (flip (fromJust <$$> lookup) . start')) `map` tuple
+
+Our typing constrains our transition function to `(state, state) ->
+Distribution (state, state)`, but we want `(state, state) -> Distribution state`; 
+but we can introduce redundancy and hide it in the interface later.
+
+>   , transition  = ap (,) id `bimap` id <$$> uncurry transition'
+>   , emission    = uncurry emission'
+>   }
 
   [^rabiner1989]: Lawrence R.  Rabiner, _A Tutorial on Hidden Markov Models and
                   Selected Applications in Speech Recognition_, Proceedings of
