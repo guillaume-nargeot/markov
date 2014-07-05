@@ -1,1 +1,5 @@
 language: haskell
+ghc: 7.8
+after_script:
+  - cabal install --force-reinstalls hpc-coveralls
+  - hpc-coveralls markov-tests --exclude-dir=test
